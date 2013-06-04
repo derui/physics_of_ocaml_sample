@@ -50,7 +50,6 @@ let vertex_shader_src = "
 in vec3 VertexPosition;
 uniform mat4 modelView;
 uniform mat4 projection;
-uniform mat4 camera;
 out vec3 diffuseColor;
 const vec3 light = normalize(vec3(10.0, 6.0, 3.0));
 const vec3 lightColor = vec3(1.0, 1.0, 0.0);
@@ -59,7 +58,6 @@ void main(void) {
     vec3 v = normalize(VertexPosition) * 0.5 + 0.5;
     diffuseColor = vec3(dot(v, light))* lightColor * diffuseMaterial;
     gl_Position = modelView * vec4(VertexPosition, 1.0);
-    gl_Position = camera * gl_Position;
     gl_Position = projection * gl_Position;
 }"
 ;;
@@ -110,13 +108,13 @@ let main_loop surface () =
     glBindVertexArray vao;
     let vbobj, element = Octahedron.make_vbo () in
     let sprog, pos = load_shaders () in
-    let model, pers, cam = (glGetUniformLocation sprog "modelView",
-                            glGetUniformLocation sprog "projection",
-                            glGetUniformLocation sprog "camera") in
+    let model, pers = (glGetUniformLocation sprog "modelView",
+                       glGetUniformLocation sprog "projection") in
     let perspective = Gl.Util.perspective_projection ~fov:90.0 ~ratio:(480.0 /. 640.0)
       ~near:0.01 ~far:1000.0
-    and camera = Gl.Util.Camera.make_matrix ~pos:({V.x = 0.0; y = 0.0;z = 2.0})
+    and camera = Gl.Util.Camera.make_matrix ~pos:({V.x = 4.0; y = 0.0;z = 4.0})
       ~at:V.zero ~up:(V.normal_axis `Y) in
+    let perspective = M.multiply ~m1:camera ~m2:perspective in
 
     print_string (M.to_string camera);
     glViewport 0 0 640 480;
@@ -138,9 +136,6 @@ let main_loop surface () =
           ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column mat));
         glUniformMatrix ~location:pers ~transpose:false
           ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column perspective));
-        glUniformMatrix ~location:cam ~transpose:false
-          ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column camera));
-
         glEnable Enable.GL_DEPTH_TEST;
         glDrawElements ~mode:DrawElements.GL_TRIANGLES ~elements_type:DrawElements.GL_UNSIGNED_SHORT
           ~size:24;
