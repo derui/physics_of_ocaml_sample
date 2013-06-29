@@ -45,35 +45,11 @@ let tear_down surface =
   end
 ;;
 
-let vertex_shader_src = "
-#version 130
-in vec3 VertexPosition;
-uniform mat4 modelView;
-uniform mat4 projection;
-out vec3 diffuseColor;
-const vec3 light = normalize(vec3(10.0, 6.0, 3.0));
-const vec3 lightColor = vec3(1.0, 1.0, 0.0);
-const vec3 diffuseMaterial = vec3(0.0, 1.0, 1.0);
-void main(void) {
-    vec3 v = normalize(VertexPosition) * 0.5 + 0.5;
-    diffuseColor = vec3(dot(v, light))* lightColor * diffuseMaterial;
-    gl_Position = modelView * vec4(VertexPosition, 1.0);
-    gl_Position = projection * gl_Position;
-}"
-;;
-
-let fragment_shader_src = "
-#version 130
-out vec4 Color;
-in vec3 diffuseColor;
-void main() {
-  Color = vec4(diffuseColor, 1.0);
-}"
-
 let load_shaders () =
   let open Gl.Api in
-  let vertexShaderID = ShaderUtil.compile Shader.GL_VERTEX_SHADER vertex_shader_src in
-  let fragmentShaderID = ShaderUtil.compile Shader.GL_FRAGMENT_SHADER fragment_shader_src in
+  let open Gl.Util in
+  let vertexShaderID = Shader.load "vertex_shader.vert" in
+  let fragmentShaderID = Shader.load "fragment_shader.frag" in
 
   let open S.Either in
   match (vertexShaderID, fragmentShaderID) with
@@ -94,10 +70,19 @@ let octahedron_position =
     let iy = (i / 10) mod 10 in
     let ix = i mod 10 in
     let iz = i / 100 in
-    {V.x = (float_of_int ix) *. Octahedron.half_width *. 1.0;
-      y = (float_of_int iy) *. Octahedron.half_height *. 1.0;
-      z = (float_of_int iz) *. Octahedron.half_width *. 1.0}
+    {V.x = (float_of_int ix) *. Octahedron.half_width *. 2.0;
+     y = (float_of_int iy) *. Octahedron.half_height *. 2.0;
+     z = (float_of_int iz) *. Octahedron.half_width *. 2.0}
   ) base
+;;
+
+let engine = ref (R.Engine.make ())
+let engine_setup () =
+  let orig = !engine in
+  engine := Array.fold_left (fun engine v ->
+    let body = Octahedron.make_rbi () in
+    R.Engine.add_body engine (R.RigidBodyInfo.set_pos body v)
+  ) orig octahedron_position
 ;;
 
 let main_loop surface () =
@@ -107,42 +92,52 @@ let main_loop surface () =
     let vao = glGenVertexArray () in
     glBindVertexArray vao;
     let vbobj, element = Octahedron.make_vbo () in
+    let background, grid = Background.make_vbo () in
     let sprog, pos = load_shaders () in
     let model, pers = (glGetUniformLocation sprog "modelView",
                        glGetUniformLocation sprog "projection") in
-    let perspective = Gl.Util.perspective_projection ~fov:90.0 ~ratio:(480.0 /. 640.0)
-      ~near:0.01 ~far:1000.0
-    and camera = Gl.Util.Camera.make_matrix ~pos:({V.x = 4.0; y = 0.0;z = 4.0})
-      ~at:V.zero ~up:(V.normal_axis `Y) in
-    let perspective = M.multiply ~m1:camera ~m2:perspective in
-
-    print_string (M.to_string camera);
+    let perspective = Gl.Util.Camera.make_perspective_matrix ~fov:90.0 ~ratio:(480.0 /. 640.0)
+      ~near:0.001 ~far:1000.0
+    and camera = KeyHandler.get_camera_mat () in
+    (* Gl.Util.Camera.make_matrix ~pos:({V.x = 1.0; y = 0.0;z = 1.0}) *)
+    (* ~at:V.zero ~up:(V.normal_axis `Y) in *)
+    let perspective = M.multiply ~m1:perspective ~m2:camera in
     glViewport 0 0 640 480;
     glClear [Clear.GL_COLOR_BUFFER_BIT;Clear.GL_DEPTH_BUFFER_BIT];
     glClearColor ~red:1.0 ~green:1.0 ~blue:1.0 ~alpha:0.0;
 
     glUseProgram sprog;
+    glEnableVertexAttribArray pos;
+    glBindBuffer Buffer.GL_ARRAY_BUFFER vbobj;
+    glBindBuffer Buffer.GL_ELEMENT_ARRAY_BUFFER element;
+
+    glUniformMatrix ~location:pers ~transpose:false
+      ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column perspective));
 
     Array.iter (fun v ->
       let mat = M.translation v in
       begin
-        glEnableVertexAttribArray pos;
-        glBindBuffer Buffer.GL_ARRAY_BUFFER vbobj;
-        glBindBuffer Buffer.GL_ELEMENT_ARRAY_BUFFER element;
+
         glVertexAttribPointer ~index:pos ~size:3 ~vert_type:VertexArray.GL_FLOAT ~normalize:false
           ~stride:0;
-        
+
         glUniformMatrix ~location:model ~transpose:false
           ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column mat));
-        glUniformMatrix ~location:pers ~transpose:false
-          ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column perspective));
+
         glEnable Enable.GL_DEPTH_TEST;
         glDrawElements ~mode:DrawElements.GL_TRIANGLES ~elements_type:DrawElements.GL_UNSIGNED_SHORT
           ~size:24;
         glDisable Enable.GL_DEPTH_TEST;
+
       end
     ) octahedron_position;
+
+    glUnbindBuffer Buffer.GL_ELEMENT_ARRAY_BUFFER;
+    glUnbindBuffer Buffer.GL_ARRAY_BUFFER;
+
+    Background.render grid background pos;
     glDeleteBuffers ~size:1 ~buffers:[vbobj];
+    glDeleteBuffers ~size:2 ~buffers:[fst grid;fst background];
     glFlush ();
 
     Sdl_video.gl_swap ();
@@ -152,15 +147,10 @@ let main_loop surface () =
 let _ =
   let surface = set_up () in
   begin
-    U.keyboard_callback ~func:(fun ~key ~state ->
-      let open Sdlcaml.Sdl in
-      match key.Key.synonym with
-      | Key.SDLK_Q -> U.force_exit_game_loop ()
-      | _ -> ()
-    );
+    engine_setup ();
+    U.keyboard_callback ~func:KeyHandler.handler;
     U.display_callback ~func:(main_loop surface);
     U.game_loop ~fps:60 ();
     tear_down surface;
   end
 ;;
-
