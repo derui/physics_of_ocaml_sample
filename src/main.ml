@@ -2,6 +2,7 @@ module R = Realcamel
 
 open Sdlcaml
 open Bigarray
+open Sugarpot.Std.Prelude
 module M = Candyvec.Matrix4
 module V = Candyvec.Vector
 module S = Sugarpot.Std
@@ -65,11 +66,11 @@ let load_shaders () =
 ;;
 
 let octahedron_position =
-  let base = Array.make (10 * 10 * 10) V.zero in
+  let base = Array.make (5 * 5 * 5) V.zero in
   Array.mapi (fun i v ->
-    let iy = (i / 10) mod 10 in
-    let ix = i mod 10 in
-    let iz = i / 100 in
+    let iy = (i / 5) mod 5 in
+    let ix = i mod 5 in
+    let iz = i / 25 in
     {V.x = (float_of_int ix) *. Octahedron.half_width *. 2.0;
      y = (float_of_int iy) *. Octahedron.half_height *. 2.0;
      z = (float_of_int iz) *. Octahedron.half_width *. 2.0}
@@ -89,6 +90,12 @@ let main_loop surface () =
   let open Gl.Api in
   let open Gl.VBO in
   begin
+    engine := R.Engine.execute_pipeline !engine;
+    List.iter (fun body ->
+      let (x, y, z) = V.of_vec |< R.RigidBodyInfo.pos body in
+      Printf.printf "body => x:%f y:%f z:%f\n" x y z
+    ) ((S.Option.option_map id @< Array.to_list) |< R.Engine.bodies !engine);
+
     let vao = glGenVertexArray () in
     glBindVertexArray vao;
     let vbobj, element = Octahedron.make_vbo () in

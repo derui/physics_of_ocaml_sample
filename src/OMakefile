@@ -80,7 +80,7 @@ OCAML_LINK_FLAGS += -cclib "$(MY_LINK_FLAGS) -L$(file ../src)"
 #
 # Various options
 #
-OCAMLFLAGS    += -annot -bin-annot
+OCAMLFLAGS    += -annot -bin-annot -g
 # OCAMLCFLAGS   +=
 # OCAMLOPTFLAGS +=
 # OCAML_LINK_FLAGS +=
