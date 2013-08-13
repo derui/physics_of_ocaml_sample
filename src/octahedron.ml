@@ -33,7 +33,7 @@ let make_collidable () =
   let make_shape () =
     {R.Shape.mesh = R.Mesh.convert ~vertices:(Array.of_list base_vertices) ~faces:(Array.of_list base_faces);
      offset_pos = V.zero;
-     offset_orientation = Q.identity ();
+     offset_orientation = Q.identity;
     } in
   {R.Collidable.shapes = [| make_shape ()|]; center = V.zero;
    half_size = {V.x = half_width; y = half_height; z = half_width;}

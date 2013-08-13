@@ -4,6 +4,8 @@ open Sdlcaml
 open Bigarray
 module S = Sugarpot.Std
 module V = Candyvec.Vector
+module Q = Candyvec.Quaternion
+module M = Candyvec.Matrix4
 
 let grid_interspace :float = 0.05
 let grid_vertical_num = 100
@@ -66,18 +68,34 @@ let gen_buffers vertices indices =
   (id, element_id)
 ;;
 
+let ground_vertex = 
+  [| ground_width /. 2.0; 0.0; ground_height /. 2.0; 
+     ground_width /. 2.0; 0.0; -. ground_height /. 2.0;
+     -. ground_width /. 2.0; 0.0; -. ground_height /. 2.0;
+     -. ground_width /. 2.0; 0.0; ground_height /. 2.0; 
+  |]
+and ground_index =
+  [| 0; 1; 2;
+     0; 2; 3;
+  |]
+and ground_vertices = 
+  [ {V.x = ground_width /. 2.0; y = 0.0; z = ground_height /. 2.0; };
+     {V.x = ground_width /. 2.0; y = 0.0; z = -. ground_height /. 2.0;};
+     {V.x = -. ground_width /. 2.0; y = 0.0; z = -. ground_height /. 2.0;};
+     {V.x = -. ground_width /. 2.0; y = 0.0; z = ground_height /. 2.0; };
+  ]
+and ground_face =
+  [ (0, 1, 2);
+    (0, 2, 3)
+  ]
+;;
+
 let make_vbo () =
   
   let ground_vertex = Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout
-    [| ground_width /. 2.0; -1.0; ground_height /. 2.0; 
-       ground_width /. 2.0; -1.0; -. ground_height /. 2.0;
-       -. ground_width /. 2.0; -1.0; -. ground_height /. 2.0;
-       -. ground_width /. 2.0; -1.0; ground_height /. 2.0; 
-     |]
+    ground_vertex
   and ground_index = Bigarray.Array1.of_array Bigarray.int16_unsigned Bigarray.c_layout
-     [| 0; 1; 2;
-        0; 2; 3;
-     |] in
+    ground_index in
 
   let grid_vertex_data = Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout
     grid_vertices 
@@ -90,7 +108,7 @@ let make_vbo () =
   (ground_id, grid_id)
 ;;
 
-let render (grid_vert, grid_elem) (ground_vert, ground_elem) pos =
+let render (grid_vert, grid_elem) (ground_vert, ground_elem) pos model =
   let open Gl.Api in
   let open Gl.VBO in
   
@@ -99,6 +117,9 @@ let render (grid_vert, grid_elem) (ground_vert, ground_elem) pos =
     ~stride:0;
   glBindBuffer Buffer.GL_ELEMENT_ARRAY_BUFFER grid_elem;
   
+  glUniformMatrix ~location:model ~transpose:false
+    ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column (M.identity ())));
+
   glEnable Enable.GL_DEPTH_TEST;
   glDrawElements ~mode:DrawElements.GL_LINES ~elements_type:DrawElements.GL_UNSIGNED_SHORT
     ~size:(grid_vertical_num + grid_horizontal_num * 2);
@@ -113,6 +134,8 @@ let render (grid_vert, grid_elem) (ground_vert, ground_elem) pos =
   glVertexAttribPointer ~index:pos ~size:3 ~vert_type:VertexArray.GL_FLOAT ~normalize:false
     ~stride:0;
   glBindBuffer Buffer.GL_ELEMENT_ARRAY_BUFFER ground_elem;
+  glUniformMatrix ~location:model ~transpose:false
+    ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column (M.identity ())));
 
   glEnable Enable.GL_DEPTH_TEST;
   glDrawElements ~mode:DrawElements.GL_TRIANGLES ~elements_type:DrawElements.GL_UNSIGNED_SHORT
@@ -123,3 +146,23 @@ let render (grid_vert, grid_elem) (ground_vert, ground_elem) pos =
   glUnbindBuffer Buffer.GL_ARRAY_BUFFER;
 ;;
 
+let make_collidable () =
+  let make_shape () =
+    {R.Shape.mesh = R.Mesh.convert ~vertices:(Array.of_list ground_vertices) ~faces:(Array.of_list ground_face);
+     offset_pos = V.zero;
+     offset_orientation = Q.identity;
+    } in
+  {R.Collidable.shapes = [| make_shape ()|]; center = V.zero;
+   half_size = {V.x = ground_width /. 2.0 ; y = 0.01; z = ground_height /. 2.0 ;}
+  }
+
+let make_rigidbody () =
+  {R.RigidBody.empty with R.RigidBody.mass = 0.1; restitution = 0.2; friction = 0.3;}
+
+let make_state () = {R.State.empty with R.State.motion_type = R.State.Static}
+
+let make_rbi () =
+  {R.RigidBodyInfo.body = make_rigidbody ();
+   collidable = make_collidable ();
+   state = make_state ();
+  }

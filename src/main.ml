@@ -66,14 +66,14 @@ let load_shaders () =
 ;;
 
 let octahedron_position =
-  let base = Array.make (5 * 5 * 5) V.zero in
+  let base = Array.make 1 V.zero in
   Array.mapi (fun i v ->
-    let iy = (i / 5) mod 5 in
-    let ix = i mod 5 in
-    let iz = i / 25 in
-    {V.x = (float_of_int ix) *. Octahedron.half_width *. 2.0;
-     y = (float_of_int iy) *. Octahedron.half_height *. 2.0;
-     z = (float_of_int iz) *. Octahedron.half_width *. 2.0}
+    (* let iy = (i / 5) mod 5 in *)
+    (* let ix = i mod 5 in *)
+    (* let iz = i / 25 in *)
+    {V.x = 1.0 *. Octahedron.half_width *. 2.0;
+     y = 0.2 +. Octahedron.half_height *. 2.0;
+     z = 1.0 *. Octahedron.half_width *. 2.0}
   ) base
 ;;
 
@@ -83,7 +83,9 @@ let engine_setup () =
   engine := Array.fold_left (fun engine v ->
     let body = Octahedron.make_rbi () in
     R.Engine.add_body engine (R.RigidBodyInfo.set_pos body v)
-  ) orig octahedron_position
+  ) orig octahedron_position;
+  let body = Background.make_rbi () in
+  engine := R.Engine.add_body !engine body
 ;;
 
 let main_loop surface () =
@@ -91,10 +93,9 @@ let main_loop surface () =
   let open Gl.VBO in
   begin
     engine := R.Engine.execute_pipeline !engine;
-    List.iter (fun body ->
-      let (x, y, z) = V.of_vec |< R.RigidBodyInfo.pos body in
-      Printf.printf "body => x:%f y:%f z:%f\n" x y z
-    ) ((S.Option.option_map id @< Array.to_list) |< R.Engine.bodies !engine);
+    (* List.iter (fun body -> *)
+    (*   let (x, y, z) = V.of_vec |< R.RigidBodyInfo.pos body in *)
+    (* ) ((S.Option.option_map id @< Array.to_list) |< R.Engine.bodies !engine); *)
 
     let vao = glGenVertexArray () in
     glBindVertexArray vao;
@@ -106,8 +107,6 @@ let main_loop surface () =
     let perspective = Gl.Util.Camera.make_perspective_matrix ~fov:90.0 ~ratio:(480.0 /. 640.0)
       ~near:0.001 ~far:1000.0
     and camera = KeyHandler.get_camera_mat () in
-    (* Gl.Util.Camera.make_matrix ~pos:({V.x = 1.0; y = 0.0;z = 1.0}) *)
-    (* ~at:V.zero ~up:(V.normal_axis `Y) in *)
     let perspective = M.multiply ~m1:perspective ~m2:camera in
     glViewport 0 0 640 480;
     glClear [Clear.GL_COLOR_BUFFER_BIT;Clear.GL_DEPTH_BUFFER_BIT];
@@ -121,8 +120,12 @@ let main_loop surface () =
     glUniformMatrix ~location:pers ~transpose:false
       ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column perspective));
 
-    Array.iter (fun v ->
-      let mat = M.translation v in
+    Array.iteri (fun index v ->
+      let next_pos = (R.Engine.bodies !engine |> (fun b ->
+        let open S.Option.Open in
+        let pos = b.(index) >>= return @< R.RigidBodyInfo.pos in
+        S.Option.get_default ~default:(V.zero) pos)) in
+      let mat = M.translation |< V.add v next_pos in
       begin
 
         glVertexAttribPointer ~index:pos ~size:3 ~vert_type:VertexArray.GL_FLOAT ~normalize:false
@@ -142,7 +145,7 @@ let main_loop surface () =
     glUnbindBuffer Buffer.GL_ELEMENT_ARRAY_BUFFER;
     glUnbindBuffer Buffer.GL_ARRAY_BUFFER;
 
-    Background.render grid background pos;
+    Background.render grid background pos model;
     glDeleteBuffers ~size:1 ~buffers:[vbobj];
     glDeleteBuffers ~size:2 ~buffers:[fst grid;fst background];
     glFlush ();
