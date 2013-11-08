@@ -17,17 +17,19 @@ let base_vertices =
     {V.x = -.half_width; y = 0.0; z = -.half_width;};
     {V.x = 0.0; y = -.half_height; z = 0.0};
   ]
+;;
 
 let base_faces =
   [ (0, 1, 2);
     (0, 2, 3);
     (0, 3, 4);
     (0, 4, 1);
-    (5, 1, 2);
-    (5, 2, 3);
-    (5, 3, 4);
-    (5, 4, 1);
-  ] 
+    (5, 2, 1);
+    (5, 3, 2);
+    (5, 4, 3);
+    (5, 1, 4);
+  ]
+;;
 
 let make_collidable () =
   let make_shape () =
@@ -53,7 +55,7 @@ let make_rbi () =
 let make_vbo () =
   let vertex_data = Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout
     (Util.vector_to_vertices base_vertices)
-    
+
   and index_data = Bigarray.Array1.of_array Bigarray.int16_unsigned Bigarray.c_layout
     (let array = Array.make ((List.length base_faces) * 3) 0 in
      ignore (List.fold_left (fun index (x, y, z) ->
@@ -64,7 +66,7 @@ let make_vbo () =
      ) 0 base_faces);
      array)
   in
-  
+
   let open Gl.VBO in
   let id = glGenBuffer ()
   and element_id = glGenBuffer () in
@@ -77,4 +79,3 @@ let make_vbo () =
     ~data:index_data ~usage:BufferData.GL_STATIC_DRAW;
   (id, element_id)
 ;;
-

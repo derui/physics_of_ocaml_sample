@@ -132,7 +132,7 @@ let main_loop surface () =
           ~stride:0;
 
         glUniformMatrix ~location:model ~transpose:false
-          ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Column mat));
+          ~value:(Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout (M.to_array ~order:M.Row mat));
 
         glEnable Enable.GL_DEPTH_TEST;
         glDrawElements ~mode:DrawElements.GL_TRIANGLES ~elements_type:DrawElements.GL_UNSIGNED_SHORT
